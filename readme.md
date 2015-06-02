@@ -9,12 +9,11 @@ functions from Fortran and C codes.
 The makefile is intended for use on the ARCHER Cray XC30 MPP Supercomputer:
 the makefile script references the PE_ENV environment variable.
 
-Before compiling please load the perftools module ("module load perftools"),
-and then compile by running "make". Once you have compiled and linked your
-application code with libpatmpi, you must then run "pat_build -w exe_file".
-This should result in a new file with the same name as your executable but
-with a "+pat" suffix.
-
+Before compiling this library please load the perftools module ("module load perftools"),
+and then compile by running "make". The perftools module must also be loaded when linking
+libpatmpi with your application code. In addition, you must run the "pat_build -w" command
+with the application executable file. This should result in a new file with the same name
+as your executable but with a "+pat" suffix.
 
 The following text describes the interface provided by the three functions
 of the pat_mpi_lib library.
@@ -22,7 +21,7 @@ of the pat_mpi_lib library.
 void pat_mpi_open(char* out_fn)
 
 The parameter, out_fn, points to a null-terminated string that specifies the name of the file that will hold the counter data:
-a NULL parameter value will set the output file name to ./patc.out. The open function also calls pat_mpi_monitor(-1,1) in order to determine a baseline for the counter data. In addition, rank 0 establishes a temporal baseline by calling MPI_Wtime and also writes a one-line  header to the output file, which gives the library version followed by the names of the data items that will appear in the subsequent lines.
+a NULL parameter value will set the output file name to ./patc.out. The open function also calls pat_mpi_monitor(-1,1) in order for rank 0 to establish a temporal baseline by calling MPI_Wtime. Rank 0 also writes a one-line header to the output file, which gives the library version followed by the names of the data items that will appear in the subsequent lines.
 
 void pat_mpi_close(void)
 
