@@ -20,12 +20,11 @@
 
 #define MAXFLEN 100
 #define PAT_RT_SEPARATOR ","
+#define PAT_REGION_ID_OPEN 1
+#define PAT_REGION_ID_MONITOR 2
 
-#define PAT_REGION_ID_OPEN 301
-#define PAT_REGION_ID_MONITOR 302
-#define PAT_REGION_ID_CLOSE 303
 
-static char ver[]="1.0.0";
+static char ver[]="1.1.0";
 
 static int rank = -1;
 static int min_node_rank = 0;
@@ -188,7 +187,6 @@ void pat_mpi_open(char* out_fn) {
   }
    
   
-  PAT_region_begin(PAT_REGION_ID_OPEN, "pat_mpi_open");
   if (min_node_rank == rank) {
     // all monitors determine the number of counters for the given
     // counter categories or PAT_CTRS_PM if no categories are specified    
@@ -223,12 +221,14 @@ void pat_mpi_open(char* out_fn) {
     
       // get the number of counters (see PAT_RT_PERFCTR in job submission script)
       // for each category
+      PAT_region_begin(PAT_REGION_ID_OPEN, "pat_mpi_open");
       ncntrs_loc = 0;
       for (int i = 0; i < cntr_cat_cnt; i++) {
         ncntrs_cat = 0;
         PAT_counters(cntr_cat[i], 0, 0, &ncntrs_cat);
         ncntrs_loc = ncntrs_loc + ncntrs_cat;
       }
+      PAT_region_end(PAT_REGION_ID_OPEN);
     }
     else {
       cntr_cat_cnt = 0;
@@ -259,7 +259,6 @@ void pat_mpi_open(char* out_fn) {
     // non-monitoring process
     PAT_record(PAT_STATE_OFF);
   }
-  PAT_region_end(PAT_REGION_ID_OPEN);
   
   
   int ok = pat_mpi_ok(), all_ok = 0;
@@ -356,9 +355,7 @@ void pat_mpi_close() {
   // if monitoring process (i.e., first process on node)    
   if (min_node_rank == rank) {
   
-    PAT_region_begin(PAT_REGION_ID_CLOSE, "pat_mpi_close");
     PAT_record(PAT_STATE_OFF);
-    PAT_region_end(PAT_REGION_ID_CLOSE);
     
     if (ncntrs > 0) {  
       free(cntr_value_tot);
