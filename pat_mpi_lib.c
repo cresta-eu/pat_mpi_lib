@@ -1,6 +1,6 @@
 /*
 
- Copyright (c) 2014 Michael Bareford
+ Copyright (c) 2016 Michael Bareford
  All rights reserved.
 
  See the LICENSE file elsewhere in this distribution for the
@@ -18,63 +18,109 @@
 #include "pat_mpi_lib.h"
 
 
-#define MAXFLEN 100
+#define MAX_NAME_LEN 100
 #define PAT_RT_SEPARATOR ","
-#define PAT_REGION_ID_OPEN 1
-#define PAT_REGION_ID_MONITOR 2
+#define PAT_REGION_OPEN 1
+#define PAT_REGION_MONITOR 2
 
 
-static char ver[]="1.1.0";
+static char ver[] = "2.0.0";
 
 static int rank = -1;
-static int min_node_rank = 0;
-static int monitor_cnt = 0;
-static int non_monitor_cnt = 0;
-static MPI_Comm mpi_comm_monitor;
+static int root_rank = -1;
 static FILE *fout = NULL;
 static int first_monitor = 1;
-static double tm0 = 0.0;
+static double tm0 = 0.0, tm = 0.0;
 static int last_nstep = 0;
 
-static int cntr_cat_cnt = 0;
-static int *cntr_cat = NULL;
-static int ncntrs_cat = 0;
-static int ncntrs = 0;
-static char **cntr_name = NULL;
-static unsigned long *cntr_value = NULL;
-static unsigned long *cntr_value_tot = NULL;
+static int ncat = 0;
+static int* cat_id = NULL;
+static int* cat_ncntr = NULL;
+static MPI_Comm* cat_comm = NULL;
+
+static int ncntr = 0;
+static char*** cat_cntr_name = NULL;
+static unsigned long** cat_cntr_value = NULL;
+static unsigned long long** cat_cntr_value_tot = NULL;
 
 static int open = 0;
+static int debug = 0;
 
 
 // return 1 if pat_mpi_open has been called successfully
-int pat_mpi_ok() {
+int pat_ok() {
   int ok = 0;
   
   if (-1 != rank) {
-    
-    if (min_node_rank == rank) {
-      ok = (monitor_cnt > 0 && cntr_cat_cnt > 0 && ncntrs > 0);
+
+    ok = 1;
+    if (ncat > 0) {
       
-      if (0 == rank) {
-        ok = (ok && fout);
+      ok = (ok && cat_id && cat_ncntr && cat_comm);
+      if (0 == ok) {
+	if (cat_id) free(cat_id);
+        if (cat_ncntr) free(cat_ncntr);
+        if (cat_comm) free(cat_comm);
+	cat_id = NULL;
+        cat_ncntr = NULL;
+        cat_comm = NULL;
       }
-    }
-    else {
-      ok = (non_monitor_cnt > 0);
+      else {
+	
+	if (ncntr > 0) {
+	  
+          ok = (ok && cat_cntr_name && cat_cntr_value && cat_cntr_value_tot);
+          if (0 == ok) {
+	    if (cat_cntr_name) {
+	      for (int i = 0; i < ncat; i++) {
+	        if (cat_cntr_name[i]) {
+	          for (int j = 0; j < cat_ncntr[i]; j++) {
+	            if (cat_cntr_name[i][j]) free(cat_cntr_name[i][j]);
+		  }
+	          free(cat_cntr_name[i]);
+	        }
+	      }
+	      free(cat_cntr_name);
+	      cat_cntr_name = NULL;
+	    }
+	    
+            if (cat_cntr_value) {
+	      for (int i = 0; i < ncat; i++) {
+	        if (cat_cntr_value[i]) free(cat_cntr_value[i]);
+	      }
+	      free(cat_cntr_value);
+	      cat_cntr_value = NULL;
+            }
+	    
+            if (cat_cntr_value_tot) {
+	      for (int i = 0; i < ncat; i++) {
+	        if (cat_cntr_value_tot[i]) free(cat_cntr_value_tot[i]);
+	      }
+	      free(cat_cntr_value_tot);
+	      cat_cntr_value_tot = NULL;
+            }
+	  }
+	  
+	} // end of <if (ncntr > 0)> clause
+	
+      }
+      
+    } // end of <if (ncat > 0)> clause
+          
+    if (rank == root_rank) {
+      ok = (ok && fout);
     }
     
-  }
+  } // end of <if (-1 != rank)> clause
   
   return ok;
 }
 
 
-
 // convert string to counter category number
-int get_cat_val(char* str) {
+int get_cat_id(char* str) {
   int cat = 0;
-  
+
   if (!str) {
     cat = 0;
   }
@@ -102,39 +148,120 @@ int get_cat_val(char* str) {
     // Cray Power Management
     cat = PAT_CTRS_PM;
   }
-  else {
-    // next counter category
-    cat = PAT_CTRS_PM+1;
+  else if (0 == strcmp("PAT_CTRS_UNCORE", str)) {
+    // Intel Uncore on socket
+    cat = PAT_CTRS_UNCORE;
   }
-  
+  else {
+    // next counter category?
+    cat = PAT_CTRS_UNCORE+1;
+  }
+
   return cat;
 }
 
 
-
-// rank zero opens the output file
-// allow the calling rank to self-identify as a monitoring process
-// each monitoring process obtains the number of monitors
-// monitoring processes agree on the number of counters and allocate sufficient memory
+// determine which processes are reading which counters
+// determine the root process
 // call pat_mpi_monitor(-1,1)
 void pat_mpi_open(char* out_fn) {
-  
-  int node_name_len, nn_i, nn_m, node_num;
-  char node_name[MPI_MAX_PROCESSOR_NAME];
-  MPI_Comm mpi_comm_node;
-  int str_len = 0, cat_cnt = 0;
+
+  int str_len = 0, nrank = 0;
+  int ncntr_max = 0;
+  int pat_res = 0;
   char* cat_list_str = NULL;
-  char* cat_str = NULL;
-  
+  char* cat_name = NULL;
   
   if (0 != open) {
     return;
   }
-  
+
+  ncat = 0;
+  ncntr = 0;
+
+  MPI_Comm_size(MPI_COMM_WORLD, &nrank);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+     
+  // get the number of counter categories
+  ///////////////////////////////////////////////
+  cat_list_str = getenv("MY_RT_CTRCAT");
+  str_len = strlen(cat_list_str);
+  ncat = str_len > 0 ? 1 : 0;
+  for (int i = 0; i < str_len; i++) {
+    if (PAT_RT_SEPARATOR[0] == cat_list_str[i]) {
+      ncat++;
+    }  
+  }
+
+  if (1 == debug && 0 == rank) {
+    printf("%d: %d categories listed.\n", rank, ncat);
+  }
   
-  // open file for counter data  
-  if (0 == rank) {
+  if (ncat <= 0) {
+    return;
+  }
+  ///////////////////////////////////////////////
+  
+    
+  // for each category, get the id, number of counters and setup an mpi communicator
+  // then determine the root rank
+  // first allocate the necessary arrays
+  ///////////////////////////////////////////////////////////////////////////////////
+  cat_id = (int*) calloc(ncat, sizeof(int));
+  cat_ncntr = (int*) calloc(ncat, sizeof(int));
+  cat_comm = (MPI_Comm*) calloc(ncat, sizeof(MPI_Comm));
+  if (0 == pat_ok()) {
+    ncat = 0;
+    ncntr = 0;
+  }
+  else {
+    pat_res = PAT_record(PAT_STATE_ON);
+    if (PAT_API_OK != pat_res) {
+      printf("%d: PAT_record(PAT_STATE_ON) failed with error %d.\n", rank, pat_res);
+    }
+    
+    cat_name = strtok(cat_list_str, PAT_RT_SEPARATOR);
+    ncntr = 0;
+    pat_res = PAT_region_begin(PAT_REGION_OPEN, "pat_mpi_open");
+    if (PAT_API_OK != pat_res) {
+      printf("%d: PAT_region_begin(PAT_REGION_OPEN) failed with error %d.\n", rank, pat_res);
+    }
+    for (int i = 0; i < ncat; i++) {
+      cat_id[i] = get_cat_id(cat_name);
+      cat_name = strtok(NULL, PAT_RT_SEPARATOR);
+    
+      pat_res = PAT_counters(cat_id[i], 0, 0, &cat_ncntr[i]);
+      if (1 == debug) {
+	if (PAT_API_OK != pat_res) {
+          printf("%d: PAT_counters failed with error %d within pat_mpi_open.\n",
+		 rank, pat_res);
+        }
+	else {
+          printf("%d: counter category %d has %d counter(s).\n",
+	         rank, cat_id[i], cat_ncntr[i]);
+	}
+      }
+      MPI_Comm_split(MPI_COMM_WORLD, cat_ncntr[i], rank, &cat_comm[i]);
+    
+      ncntr += cat_ncntr[i];
+    }
+    pat_res = PAT_region_end(PAT_REGION_OPEN);
+    if (PAT_API_OK != pat_res) {
+      printf("%d: PAT_region_end(PAT_REGION_OPEN) failed with error %d.\n", rank, pat_res);
+    }
+  }
+  
+  ncntr_max = 0;
+  MPI_Allreduce(&ncntr, &ncntr_max, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD);
+  root_rank = (ncntr == ncntr_max) ? rank : nrank;
+  MPI_Allreduce(MPI_IN_PLACE, &root_rank, 1, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD);
+  ///////////////////////////////////////////////////////////////////////////////////
+
+
+  // root rank opens file for counter data
+  ////////////////////////////////////////
+  if (rank == root_rank) {
     if (fout) {
       fclose(fout);
       fout = NULL;
@@ -147,128 +274,48 @@ void pat_mpi_open(char* out_fn) {
       fout = fopen("./patc.out", "w");
     }
   }
+  ////////////////////////////////////////
+  
+  
+  if (ncat > 0 && ncntr > 0) {
+    // for each category, allocate the counter name, value and total arrays
+    ////////////////////////////////////////////////////////////////////////////////////////
+    cat_cntr_name = (char***) calloc(ncat, sizeof(char**));
+    cat_cntr_value = (unsigned long**) calloc(ncat, sizeof(unsigned long*));
+    cat_cntr_value_tot = (unsigned long long**) calloc(ncat, sizeof(unsigned long long*));
+    if (cat_cntr_name && cat_cntr_value && cat_cntr_value_tot) {
+      for (int i = 0; i < ncat; i++) {
+        cat_cntr_name[i] = (char**) calloc(cat_ncntr[i], sizeof(char*));
+	if (cat_cntr_name[i]) {
+	  for (int j = 0; j < cat_ncntr[i]; j++) {
+            cat_cntr_name[i][j] = (char*) calloc(MAX_NAME_LEN, sizeof(char));
+          }
+	}
+	
+	cat_cntr_value[i] = (unsigned long*) calloc(cat_ncntr[i], sizeof(unsigned long));
+        cat_cntr_value_tot[i] = (unsigned long long*) calloc(cat_ncntr[i], sizeof(unsigned long long));
+      }
+    }
 
+    if (0 == pat_ok()) {
+      ncntr = 0;
+    }
+    /////////////////////////////////////////////////////////////////////////////////////////
+  }
 
-  // determine the number of the node on which this rank is running
-  MPI_Get_processor_name(node_name, &node_name_len);
-  if (node_name_len > 0) {
-    nn_i = node_name_len-1;
-    nn_m = 1;
-    node_num = 0;
-    while (nn_i > 0 && 0 != isdigit(node_name[nn_i])) {
-      node_num = node_num + (node_name[nn_i]-'0')*nn_m;
-      nn_m = 10*nn_m;
-      nn_i = nn_i - 1;
-    }
+     
+  int all_ok = pat_ok();
+  if (1 == debug) {
+     printf("%d: pat_ok() returned %d.\n", rank, all_ok);
   }
-  
-  // determine if this rank is the minimum rank for the identified node number
-  MPI_Comm_split(MPI_COMM_WORLD, node_num, rank, &mpi_comm_node);
-  MPI_Allreduce(&rank, &min_node_rank, 1, MPI_INTEGER, MPI_MIN, mpi_comm_node);
- 
-  if (rank == min_node_rank) {
-    // the minimum rank on a node is responsible for monitoring
-    // the performance counters on that node  
-    MPI_Comm_split(MPI_COMM_WORLD, 1, rank, &mpi_comm_monitor);
-  }
-  else {
-    MPI_Comm_split(MPI_COMM_WORLD, 0, rank, &mpi_comm_monitor);
-  }
-  
-  // ensure all monitor ranks have self-identified...
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (min_node_rank == rank) {
-    // ...before each monitor rank obtains the total number of monitors
-    MPI_Comm_size(mpi_comm_monitor, &monitor_cnt);   
-  }
-  else {
-    // and other processes obtain the number of non-monitors
-    MPI_Comm_size(mpi_comm_monitor, &non_monitor_cnt);
-  }
-   
-  
-  if (min_node_rank == rank) {
-    // all monitors determine the number of counters for the given
-    // counter categories or PAT_CTRS_PM if no categories are specified    
-    PAT_record(PAT_STATE_ON);
-    
-    // get the number of counter categories    
-    cat_list_str = getenv("MY_RT_CTRCAT");
-    str_len = strlen(cat_list_str);
-    cat_cnt = str_len > 0 ? 1 : 0;
-    for (int i = 0; i < str_len; i++) {
-      if (PAT_RT_SEPARATOR[0] == cat_list_str[i]) {
-        cat_cnt++;
-      }  
-    }
-    
-    int ncntrs_loc = 0;
-    cntr_cat_cnt = cat_cnt > 0 ? cat_cnt : 1;
-    cntr_cat = (int*) calloc(cntr_cat_cnt, sizeof(int));
-
-    if (cntr_cat) {
-      // get the counter categories (see MY_RT_CTRCAT in job submission script)
-      if (cat_cnt <= 0) {
-        cntr_cat[0] = PAT_CTRS_PM;
-      }
-      else {
-        cat_str = strtok(cat_list_str, PAT_RT_SEPARATOR);
-        for (int i = 0; i < cntr_cat_cnt; i++) {
-          cntr_cat[i] = get_cat_val(cat_str);
-          cat_str = strtok(NULL, PAT_RT_SEPARATOR);
-        }
-      }
-    
-      // get the number of counters (see PAT_RT_PERFCTR in job submission script)
-      // for each category
-      PAT_region_begin(PAT_REGION_ID_OPEN, "pat_mpi_open");
-      ncntrs_loc = 0;
-      for (int i = 0; i < cntr_cat_cnt; i++) {
-        ncntrs_cat = 0;
-        PAT_counters(cntr_cat[i], 0, 0, &ncntrs_cat);
-        ncntrs_loc = ncntrs_loc + ncntrs_cat;
-      }
-      PAT_region_end(PAT_REGION_ID_OPEN);
-    }
-    else {
-      cntr_cat_cnt = 0;
-    }
-    
-    // ensure all monitors agree on the total number of counters
-    MPI_Allreduce(&ncntrs_loc, &ncntrs, 1, MPI_INTEGER, MPI_MAX, mpi_comm_monitor);
-  
-    if (ncntrs > 0) {
-      // allocate memory to hold counter names and values
-      cntr_name = (char**) calloc(ncntrs, sizeof(char*));
-      if (cntr_name) {
-        for (int i=0; i < ncntrs; i++) {
-          cntr_name[i] = (char*) calloc(MAXFLEN, sizeof(char));
-        }
-      
-        cntr_value = (unsigned long*) calloc(ncntrs, sizeof(unsigned long));
-        cntr_value_tot = (unsigned long*) calloc(ncntrs, sizeof(unsigned long));
-      }
-      
-      if (!cntr_name || !cntr_value || !cntr_value_tot) {
-        ncntrs = 0;
-      }
-    }   
-    
-  } // end of <if (min_node_rank == rank)> clause
-  else {
-    // non-monitoring process
-    PAT_record(PAT_STATE_OFF);
-  }
-  
-  
-  int ok = pat_mpi_ok(), all_ok = 0;
-  MPI_Allreduce(&ok, &all_ok, 1, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD);
-  open = all_ok;
-  if (0 == open) {
+  MPI_Allreduce(MPI_IN_PLACE, &all_ok, 1, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD);
+  if (0 == all_ok) {
+    open = 0;
     pat_mpi_close();
   }
   else {
     // do initial monitoring call, which ends with MPI_Barrier
+    open = 1;
     first_monitor = 1;
     pat_mpi_monitor(-1, 1);
   }
@@ -277,64 +324,87 @@ void pat_mpi_open(char* out_fn) {
 
 
 
-// read counter values if first rank on node,
-// and output those values if rank zero
+// read counter values and output those values if root rank
+// todo: make use of ncntr_test
 void pat_mpi_monitor(int nstep, int sstep) {
    
+  int ncntr_test = 0, pat_res = 0;
+  unsigned long long ncntr_val = 0;
+  
   if (0 == open) {
     return;
   }
   
-  // if monitoring process (i.e., first process on node)    
-  if (min_node_rank == rank) {
-    
-    // get time
-    double tm = MPI_Wtime();
+
+  if (rank == root_rank) {
+    tm = MPI_Wtime();
     if (1 == first_monitor) {
       tm0 = tm;
       first_monitor = 0;
     }
-  
-    // read counters
-    PAT_region_begin(PAT_REGION_ID_MONITOR, "pat_mpi_monitor");
-    for (int i=0, j=0, ncntrs_cnt=0; i < cntr_cat_cnt && j < ncntrs; i++, j += ncntrs_cat) {
-      ncntrs_cat = 0;
-      PAT_counters(cntr_cat[i], (const char**) &cntr_name[j], &cntr_value[j], &ncntrs_cat);
+  }
+
+
+  if (ncat > 0 && ncntr > 0) {
+    // get counter values
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    pat_res = PAT_region_begin(PAT_REGION_MONITOR, "pat_mpi_monitor");
+    if (PAT_API_OK != pat_res) {
+      printf("%d: PAT_region_begin(PAT_REGION_MONITOR) failed with error %d.\n", rank, pat_res);
     }
-    PAT_region_end(PAT_REGION_ID_MONITOR);
-  
-    // calculate totals and averages
-    for (int i=0; i < ncntrs; i++) {  
-      MPI_Allreduce(&cntr_value[i], &cntr_value_tot[i], 1, MPI_UNSIGNED_LONG, MPI_SUM, mpi_comm_monitor);
-    }  
-           
-    // output data
-    if (0 == rank) {
-      if (tm0 == tm) {
-        // this function is being called by pat_mpi_open()
-        if (fout) {
-          fprintf(fout, "pat_mpi_lib v%s: time (s), step, substep", ver);
-          for (int i=0; i < ncntrs; i++) {
-            fprintf(fout, ", %s", cntr_name[i]); 
-          }
-          fprintf(fout, "\n");
-        }
+    for (int i = 0; i < ncat; i++) {
+      pat_res = PAT_counters(cat_id[i], (const char**) cat_cntr_name[i], cat_cntr_value[i], &ncntr_test);
+      if (1 == debug) {
+	if (PAT_API_OK != pat_res) {
+	  printf("%d: PAT_counters failed with error %d within pat_mpi_monitor.\n", rank, pat_res);
+	}
+	else if (cat_ncntr[i] != ncntr_test) {
+          printf("%d: counter category %d has %d counter(s) when %d expected.\n",
+	         rank, cat_id[i], ncntr_test, cat_ncntr[i]);
+	}
       }
-    
-      if (fout) { 
-        // update counter data file   
-        fprintf(fout, "%f %d %d", tm-tm0, nstep, sstep);
-        for (int i = 0; i < ncntrs; i++) {
-          fprintf(fout, " %ld", cntr_value_tot[i]);
-          if (monitor_cnt > 1) {
-            fprintf(fout, " %f", ((double) cntr_value_tot[i])/((double) monitor_cnt));
-          } 
+    }
+    pat_res = PAT_region_end(PAT_REGION_MONITOR);
+    if (PAT_API_OK != pat_res) {
+      printf("%d: PAT_region_end(PAT_REGION_MONITOR) failed with error %d.\n", rank, pat_res);
+    }
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    // get counter value totals
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    for (int i = 0; i < ncat; i++) {
+      for (int j = 0; j < cat_ncntr[i]; j++) {
+	ncntr_val = (unsigned long long) cat_cntr_value[i][j];
+        MPI_Reduce(&ncntr_val, &cat_cntr_value_tot[i][j], 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, root_rank, cat_comm[i]);
+      }
+    }
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  }
+  
+
+  if (rank == root_rank) {
+    if (fout) {
+      // output data
+      if (tm0 == tm) {
+        fprintf(fout, "pat_mpi_lib v%s: time (s), step, substep", ver);
+        for (int i = 0; i < ncat; i++) {
+	  for (int j = 0; j < cat_ncntr[i]; j++) {
+            fprintf(fout, ", %s", cat_cntr_name[i][j]);
+	  }
         }
         fprintf(fout, "\n");
       }
+      
+      // update counter data file
+      fprintf(fout, "%f %d %d", tm-tm0, nstep, sstep);
+      for (int i = 0; i < ncat; i++) {
+	for (int j = 0; j < cat_ncntr[i]; j++) {
+          fprintf(fout, " %llu", cat_cntr_value_tot[i][j]);
+	}
+      }
+      fprintf(fout, "\n");
     }
-    
-  } // end of <if (min_node_rank == rank)> clause
+  }
   
   last_nstep = nstep;
   
@@ -347,41 +417,63 @@ void pat_mpi_monitor(int nstep, int sstep) {
 // close the file used to record counter data
 void pat_mpi_close() {
 
+  int pat_res = 0;
+  
   if (1 == open) {
     // do the last monitoring call
     pat_mpi_monitor(last_nstep+1, 1);
   }
   
-  // if monitoring process (i.e., first process on node)    
-  if (min_node_rank == rank) {
-  
-    PAT_record(PAT_STATE_OFF);
+  // turn off recording and free memory   
+  pat_res = PAT_record(PAT_STATE_OFF);
+  if (PAT_API_OK != pat_res) {
+    printf("%d: PAT_record(PAT_STATE_OFF) failed with error %d.\n", rank, pat_res);
+  }
     
-    if (ncntrs > 0) {  
-      free(cntr_value_tot);
-      free(cntr_value);
-  
-      for (int i = 0; i < ncntrs; i++) {
-        free(cntr_name[i]);
+  if (ncat > 0) {
+    if (ncntr > 0) {
+      for (int i = 0; i < ncat; i++) {
+        for (int j = 0; j < cat_ncntr[i]; j++) {
+          free(cat_cntr_name[i][j]);
+        }
+        free(cat_cntr_name[i]);
+        free(cat_cntr_value[i]);
+        free(cat_cntr_value_tot[i]);
       }
-      free(cntr_name);
-      ncntrs = 0;
-    }
     
-    if (cntr_cat_cnt > 0) {  
-      free(cntr_cat);
-      cntr_cat_cnt = 0;
-    }
+      free(cat_cntr_name);
+      free(cat_cntr_value);
+      free(cat_cntr_value_tot);
 
-    if (0 == rank) {
-      if (fout) {
-        // close performance counter data file
-        fclose(fout);
-        fout = NULL;
-      }
+      cat_cntr_name = NULL;
+      cat_cntr_value = NULL;
+      cat_cntr_value_tot = NULL;
+
+      ncntr = 0;
     }
+        
+    free(cat_id);
+    free(cat_ncntr);
+    free(cat_comm);
+
+    cat_id = NULL;
+    cat_ncntr = NULL;
+    cat_comm = NULL;
     
-  } // end of <if (min_node_rank == rank)> clause
+    ncat = 0;
+  }
+    
+
+  if (rank == root_rank) {
+    if (fout) {
+      // close performance counter data file
+      fclose(fout);
+      fout = NULL;
+    }
+  }
+
+  root_rank = -1;
+  rank = -1;
   
   open = 0;
   MPI_Barrier(MPI_COMM_WORLD);
