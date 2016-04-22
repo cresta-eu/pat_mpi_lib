@@ -37,12 +37,9 @@ Step [int]: a simple numerical label: e.g., the iteration count, assuming pat_mp
 
 Sub-step [int]: another numerical label that might be required if there is more than one monitor call within the same loop.
 
-Counter Total [unsigned long]: the sum of the counter values across all nodes
+Counter Total [unsigned long long]: the sum of the counter values across all nodes
 
-Counter Average [double]: the average of the counter values across all nodes 
-
-The last two fields (Counter Total and Counter average) are repeated for however many counters are being monitored. The
-average values are not output if the code is running on one node only.
+The last two field (Counter Total) is repeated for however many counters are being monitored. 
 
 To specify which counters you wish to monitor you must specify three environment variables within your job submission
 script. For example, the following will record energy and power usage.
