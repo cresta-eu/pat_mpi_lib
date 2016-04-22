@@ -6,8 +6,6 @@
 # Replace this with your budget code
 #PBS -A <account name>
 
-module load perftools
-
 # Move to directory that script was submitted from
 export PBS_O_WORKDIR=$(readlink -f $PBS_O_WORKDIR)
 cd $PBS_O_WORKDIR

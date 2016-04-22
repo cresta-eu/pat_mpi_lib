@@ -9,8 +9,8 @@ functions from Fortran and C codes.
 The makefile is intended for use on the ARCHER Cray XC30 MPP Supercomputer:
 the makefile script references the PE_ENV environment variable.
 
-Before compiling this library please load the perftools module ("module load perftools"),
-and then compile by running "make". The perftools module must also be loaded when linking
+Before compiling this library please load two modules, perftools-base ("module load perftools-base")
+and perftools. Then compile by running "make". The perftools modules must also be loaded when linking
 libpatmpi with your application code. In addition, you must run the "pat_build -w" command
 with the application executable file. This should result in a new file with the same name
 as your executable but with a "+pat" suffix.
@@ -37,17 +37,12 @@ Step [int]: a simple numerical label: e.g., the iteration count, assuming pat_mp
 
 Sub-step [int]: another numerical label that might be required if there is more than one monitor call within the same loop.
 
-Counter Total [unsigned long]: the sum of the counter values across all nodes
+Counter Total [unsigned long long]: the sum of the counter values across all nodes
 
-Counter Average [double]: the average of the counter values across all nodes 
-
-The last two fields (Counter Total and Counter average) are repeated for however many counters are being monitored. The
-average values are not output if the code is running on one node only.
+The last two field (Counter Total) is repeated for however many counters are being monitored. 
 
 To specify which counters you wish to monitor you must specify three environment variables within your job submission
 script. For example, the following will record energy and power usage.
-
-module load perftools
 
 export PAT_RT_SUMMARY=1
 
@@ -56,8 +51,6 @@ export MY_RT_CTRCAT=PAT_CTRS_PM
 export PAT_RT_PERFCTR=PM_POWER:NODE,PM_ENERGY:NODE
 
 And this setup will return cache-related data.
-
-module load perftools
 
 export PAT_RT_SUMMARY=1
 
