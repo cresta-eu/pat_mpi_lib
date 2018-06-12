@@ -19,22 +19,19 @@ with a "+pat" suffix.
 The following text describes the interface provided by the three functions
 of the pat_mpi_lib library.
 
-void pat_mpi_open(const char* out_fn)
+void pat_mpi_initialise(const char* out_fn)
 
-The parameter, out_fn, points to a null-terminated string that specifies the name of the file that will hold the counter data:
-a NULL parameter value will set the output file name to ./patc.out. The open function also calls pat_mpi_monitor(-1,1) in order to
-determine a baseline for the counter data. In addition, rank 0 establishes a temporal baseline by calling MPI_Wtime and also writes
-a one-line  header to the output file, which gives the library version followed by the names of the data items that will appear in
-the subsequent lines.
+The parameter, out_fn, points to a null-terminated string that specifies the name of the file that will hold the counter data: a NULL parameter value will set the output file name to ./patc.out. The open function also calls pat_mpi_record(-1,1,1,0) in order to determine a baseline for the counter data. In addition, rank 0 establishes a temporal baseline by calling MPI_Wtime and also writes a one-line  header to the output file, which gives the library version followed by the names of the data items that will appear in the subsequent lines.
 
-void pat_mpi_close(void)
+void pat_mpi_finalise(void)
 
-This function calls pat_mpi_monitor(nstep+1,1), see below. All counter files are closed, then rank 0 closes the output file.
+This function calls pat_mpi_record(nstep+1,1,1,0), see below. All counter files are closed, then rank 0 closes the output file.
 
-void pat_mpi_monitor(const int nstep, const int sstep)
+void pat_mpi_record(const int nstep, const int sstep, const int initial_sync, const int initial_rec)
 
-The two parameters allow the client to label each set of counter values that are output by rank 0. The output file contains lines
-of space-separated fields. A description of each field follows (the  C-language data type is given in square brackets).
+The first two parameters (nstep and sstep) allow the client to label each set of counter values that are output by rank 0. If initial_sync is true MPI_Barrier is called before reading takes place. If initial_sync and initial_rec are both true then the energy counters are read before and after the initial barrier. Note, initial_rec is only used when initial_sync is true.
+
+The output file contains lines of space-separated fields. A description of each field follows (the  C-language data type is given in square brackets).
 
 Time [double]: the time as measured by MPI_Wtime (called by rank zero) that has elapsed since the last call to pat_mpi_open. 
 Step [int]: a simple numerical label: e.g., the iteration count, assuming pat_mpi_monitor is being called from within a loop. 
