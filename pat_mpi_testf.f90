@@ -18,20 +18,20 @@ program pat_testf
   
   implicit none
  
-  integer :: ierr, i
+  integer :: ierr, i, res
   integer :: comm, rank
   character (len=14) :: out_fn = "patc_test.out"//CHAR(0)
   
   call MPI_Init(ierr)
   
-  call pat_mpi_open(out_fn)
+  call pat_mpi_initialise(out_fn)
 
   do i=1,10
-    call pat_mpi_monitor(i,1)
+    res = pat_mpi_record(1,i,1,1)
     call sleep(1)
   end do
 
-  call pat_mpi_close()
+  call pat_mpi_finalise()
 
   call MPI_Finalize(ierr)
  

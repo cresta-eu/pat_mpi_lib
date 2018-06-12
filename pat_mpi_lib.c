@@ -24,13 +24,15 @@
 #include "pat_mpi_lib.h"
 
 
+static char ver[]="4.0.0";
+
+#define PAT_RECORD_OK 0
+#define PAT_RECORD_UNINITIALISED 1
+#define PAT_RECORD_ERROR 2
 #define MAX_NAME_LEN 128
 #define PAT_RT_SEPARATOR ","
 #define PAT_REGION_OPEN 1
 #define PAT_REGION_MONITOR 2
-
-
-static char ver[]="3.0.0";
 
 static int rank = -1;
 static int root_rank = -1;
@@ -170,8 +172,8 @@ int get_cat_val(char* str) {
 // allow the calling rank to self-identify as a monitoring process
 // each monitoring process obtains the number of monitors
 // monitoring processes agree on the number of counters and allocate sufficient memory
-// call pat_mpi_monitor(-1,1)
-void pat_mpi_open(const char* log_fpath) {
+// call pat_mpi_record(-1,1,1,0)
+void pat_mpi_initialise(const char* log_fpath) {
   
   int str_len = 0;
   int nrank = 0;
@@ -318,32 +320,27 @@ void pat_mpi_open(const char* log_fpath) {
   MPI_Allreduce(MPI_IN_PLACE, &all_ok, 1, MPI_LOGICAL, MPI_LAND, MPI_COMM_WORLD);
   if (0 == all_ok) {
     open = 0;
-    pat_mpi_close();
+    pat_mpi_finalise();
   }
   else {
     // do initial monitoring call, which ends with MPI_Barrier
     open = 1;
     first_monitor = 1;
-    pat_mpi_monitor(-1, 1);
+    pat_mpi_record(-1, 1, 1, 0);
   }
   
-} // end of pat_mpi_open() function
+} // end of pat_mpi_initialise() function
 
 
 
 // read counter values if first rank on node,
 // and output those values if rank zero
-void pat_mpi_monitor(const int nstep, const int sstep) {
+unsigned int pat_mpi_read_counter_values(const int nstep, const int sstep) {
    
   int ncntr_test = 0;
   int pat_res = 0;
   unsigned long long ncntr_val = 0;
-
-  if (0 == open) {
-    return;
-  }
-
-  MPI_Barrier(MPI_COMM_WORLD);
+  unsigned int res = PAT_RECORD_OK;
 
   if (rank == root_rank) {
     tm = MPI_Wtime();
@@ -358,15 +355,18 @@ void pat_mpi_monitor(const int nstep, const int sstep) {
     ///////////////////////////////////////////////////////////////////////////////////////////
     pat_res = PAT_region_begin(PAT_REGION_MONITOR, "pat_mpi_monitor");
     if (PAT_API_OK != pat_res) {
+      res = PAT_RECORD_ERROR;
       printf("%d: PAT_region_begin(PAT_REGION_MONITOR) failed with error %d.\n", rank, pat_res);
     }
     for (int i = 0; i < ncat; i++) {
       pat_res = PAT_counters(cat_id[i], (const char**) cat_cntr_name[i], cat_cntr_value[i], &ncntr_test);
       if (0 != debug) {
         if (PAT_API_OK != pat_res) {
+	  res = PAT_RECORD_ERROR;
           printf("%d: PAT_counters failed with error %d within pat_mpi_monitor.\n", rank, pat_res);
         }
         else if (cat_ncntr[i] != ncntr_test) {
+	  res = PAT_RECORD_ERROR;
           printf("%d: counter category %d has %d counter(s) when %d expected.\n",
             rank, cat_id[i], ncntr_test, cat_ncntr[i]);
         }
@@ -374,6 +374,7 @@ void pat_mpi_monitor(const int nstep, const int sstep) {
     }
     pat_res = PAT_region_end(PAT_REGION_MONITOR);
     if (PAT_API_OK != pat_res) {
+      res = PAT_RECORD_ERROR;
       printf("%d: PAT_region_end(PAT_REGION_MONITOR) failed with error %d.\n", rank, pat_res);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////
@@ -414,22 +415,53 @@ void pat_mpi_monitor(const int nstep, const int sstep) {
     }
   }
 
+  return res;
+  
+} // end of pat_mpi_read_counter_values() function
+
+
+
+// read and record counter values if first rank on node
+// the reading will be labelled with the step and substep numbers
+// if initial_sync is true MPI_Barrier is called before reading takes place
+// if initial_sync and initial_rec are true then counters are read before and after initial barrier
+// initial_rec is only used when initial_sync is true
+unsigned int pat_mpi_record(const int nstep, const int sstep, const int initial_sync, const int initial_rec) {
+   
+  if (0 == open) {
+    return PAT_RECORD_UNINITIALISED;
+  }
+
+  unsigned int res = PAT_RECORD_OK;
+  if (0 != initial_sync) {
+    if (0 != initial_rec) {
+      res = pat_mpi_read_counter_values(nstep, sstep);
+    }
+	
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
+
+  if (PAT_RECORD_OK == res) {
+    res = pat_mpi_read_counter_values(nstep, sstep);
+  }
+    
   last_nstep = nstep;
 
   MPI_Barrier(MPI_COMM_WORLD);
+
+  return res;
   
-} // end of pat_mpi_monitor() function
+} // end of pat_mpi_record() function
 
 
-
-// close the file used to record counter data
-void pat_mpi_close() {
+// close the files used to read and record counter data
+void pat_mpi_finalise() {
   
   int pat_res = 0;
 
   if (0 != open) {
     // do the last monitoring call
-    pat_mpi_monitor(last_nstep+1, 1);
+    pat_mpi_record(last_nstep+1, 1, 1, 0);
   }
 
   // turn off recording and free memory   
@@ -486,4 +518,4 @@ void pat_mpi_close() {
   open = 0;
   MPI_Barrier(MPI_COMM_WORLD); 
   
-} // end of pat_mpi_close() function
+} // end of pat_mpi_finalise() function
