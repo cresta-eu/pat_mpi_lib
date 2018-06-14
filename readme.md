@@ -29,7 +29,7 @@ The parameter, `out_fn`, points to a null-terminated string that specifies the n
 void pat_mpi_finalise(void)
 ```
 
-The finalise function calls `pat_mpi_record(nstep+1,1,1,0)` (described below). All counter files are closed, then rank 0 closes the output file.
+The finalise function calls `pat_mpi_record(nstep,1,1,0)` (described below). All counter files are closed, then rank 0 closes the output file.
 
 ```bash
 void pat_mpi_record(const int nstep, const int sstep, const int initial_sync, const int initial_rec)
