@@ -56,6 +56,7 @@ script. For example, the following will record energy and power usage.
 ```bash
 module load perftools
 export PAT_RT_SUMMARY=1
+export PAT_RT_REGION_MAX=100000
 export MY_RT_CTRCAT=PAT_CTRS_PM
 export PAT_RT_PERFCTR=PM_POWER:NODE,PM_ENERGY:NODE
 ```
@@ -65,6 +66,7 @@ And this setup will return cache-related data.
 ```bash
 module load perftools
 export PAT_RT_SUMMARY=1
+export PAT_RT_REGION_MAX=100000
 export MY_RT_CTRCAT=PAT_CTRS_CPU
 export PAT_RT_PERFCTR=2
 ```
