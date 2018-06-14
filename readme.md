@@ -6,10 +6,10 @@ This repository holds source code for the `pat_mpi_lib` library. There are
 also two small test harnesses that demonstrate how to call the library
 functions from Fortran and C codes.
 
-The `makefile` is intended for use on the ARCHER Cray XC30 MPP Supercomputer:
+The makefile is intended for use on the ARCHER Cray XC30 MPP Supercomputer:
 the makefile script references the `PE_ENV` environment variable.
 
-Before compiling please load the `perftools` module (`module load perftools`),
+Before compiling please load the perftools module (`module load perftools`),
 and then compile by running `make`. Once you have compiled and linked your
 application code with `libpatmpi`, you must then run `pat_build -w <executable>`.
 This should result in a new file with the same name as your executable but
@@ -23,13 +23,13 @@ of the `pat_mpi_lib` library.
 void pat_mpi_initialise(const char* out_fn)
 ```
 
-The parameter, `out_fn`, points to a null-terminated string that specifies the name of the file that will hold the counter data: a NULL parameter value will set the output file name to `pat_log.out`. The open function also calls `pat_mpi_record(-1,1,1,0)` in order to determine a baseline for the counter data. In addition, rank 0 establishes a temporal baseline by calling `MPI_Wtime` and also writes a one-line header to the output file, which gives the library version followed by the names of the data items that will appear in the subsequent lines.
+The parameter, `out_fn`, points to a null-terminated string that specifies the name of the file that will hold the counter data: a NULL parameter value will set the output file name to `pat_log.out`. The initialise function also calls `pat_mpi_record(-1,1,1,0)` in order to determine a baseline for the counter data. In addition, rank 0 establishes a temporal baseline by calling `MPI_Wtime` and also writes a one-line header to the output file, which gives the library version followed by the names of the data items that will appear on subsequent lines.
 
 ```bash
 void pat_mpi_finalise(void)
 ```
 
-This function calls `pat_mpi_record(nstep+1,1,1,0)`, see below. All counter files are closed, then rank 0 closes the output file.
+The finalise function calls `pat_mpi_record(nstep+1,1,1,0)` (described below). All counter files are closed, then rank 0 closes the output file.
 
 ```bash
 void pat_mpi_record(const int nstep, const int sstep, const int initial_sync, const int initial_rec)
