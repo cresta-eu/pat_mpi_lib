@@ -14,6 +14,7 @@
   limitations under the License.
 */
 
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,15 +25,13 @@
 #include "pat_mpi_lib.h"
 
 
-static char ver[]="4.0.0";
+static char ver[]="4.1.0";
 
 #define PAT_RECORD_OK 0
 #define PAT_RECORD_UNINITIALISED 1
 #define PAT_RECORD_ERROR 2
 #define MAX_NAME_LEN 128
 #define PAT_RT_SEPARATOR ","
-#define PAT_REGION_OPEN 1
-#define PAT_REGION_MONITOR 2
 
 static int rank = -1;
 static int root_rank = -1;
@@ -54,9 +53,10 @@ static unsigned long long** cat_cntr_value_tot = NULL;
 
 static int open = 0;
 static int debug = 0;
+static int region_id = 1;
 
 
-// return 1 if pat_mpi_open has been called successfully
+// return 1 if pat_mpi_initialise has been called successfully
 int pat_mpi_ok() {
   int ok = 0;
 
@@ -234,9 +234,9 @@ void pat_mpi_initialise(const char* log_fpath) {
 
     cat_name = strtok(cat_list_str, PAT_RT_SEPARATOR);
     ncntr = 0;
-    pat_res = PAT_region_begin(PAT_REGION_OPEN, "pat_mpi_open");
+    pat_res = PAT_region_begin(region_id, "pat_mpi_initialise");
     if (PAT_API_OK != pat_res) {
-      printf("%d: PAT_region_begin(PAT_REGION_OPEN) failed with error %d.\n", rank, pat_res);
+      printf("%d: PAT_region_begin(PAT_REGION_INITIALISE) failed with error %d.\n", rank, pat_res);
     }
     for (int i = 0; i < ncat; i++) {
       cat_id[i] = get_cat_val(cat_name);
@@ -245,7 +245,7 @@ void pat_mpi_initialise(const char* log_fpath) {
       pat_res = PAT_counters(cat_id[i], 0, 0, &cat_ncntr[i]);
       if (0 != debug) {
         if (PAT_API_OK != pat_res) {
-          printf("%d: PAT_counters failed with error %d within pat_mpi_open.\n", rank, pat_res);
+          printf("%d: PAT_counters failed with error %d within pat_mpi_initialise.\n", rank, pat_res);
         }
         else {
           printf("%d: counter category %d has %d counter(s).\n", rank, cat_id[i], cat_ncntr[i]);
@@ -255,9 +255,10 @@ void pat_mpi_initialise(const char* log_fpath) {
 
       ncntr += cat_ncntr[i];
     }
-    pat_res = PAT_region_end(PAT_REGION_OPEN);
+    pat_res = PAT_region_end(region_id);
+    region_id++;
     if (PAT_API_OK != pat_res) {
-      printf("%d: PAT_region_end(PAT_REGION_OPEN) failed with error %d.\n", rank, pat_res);
+      printf("%d: PAT_region_end(%d) failed with error %d.\n", rank, region_id, pat_res);
     }
   }
 
@@ -275,9 +276,16 @@ void pat_mpi_initialise(const char* log_fpath) {
       fclose(log_fp);
       log_fp = NULL;
     }
+    
     // open performance counter data file
     if (NULL != log_fpath) {
-      log_fp = fopen(log_fpath, "w");
+      struct stat buffer;   
+      if (0 == stat(log_fpath, &buffer)) {
+        log_fp = fopen(log_fpath, "a");
+      }
+      else {
+        log_fp = fopen(log_fpath, "w");
+      }
     }
     if (NULL == log_fp) {
       log_fp = fopen("./pat_log.out", "w");
@@ -353,17 +361,17 @@ unsigned int pat_mpi_read_counter_values(const int nstep, const int sstep) {
   if (ncat > 0 && ncntr > 0) {
     // get counter values
     ///////////////////////////////////////////////////////////////////////////////////////////
-    pat_res = PAT_region_begin(PAT_REGION_MONITOR, "pat_mpi_monitor");
+    pat_res = PAT_region_begin(region_id, "pat_mpi_record");
     if (PAT_API_OK != pat_res) {
       res = PAT_RECORD_ERROR;
-      printf("%d: PAT_region_begin(PAT_REGION_MONITOR) failed with error %d.\n", rank, pat_res);
+      printf("%d: PAT_region_begin(PAT_REGION_RECORD) failed with error %d.\n", rank, pat_res);
     }
     for (int i = 0; i < ncat; i++) {
       pat_res = PAT_counters(cat_id[i], (const char**) cat_cntr_name[i], cat_cntr_value[i], &ncntr_test);
       if (0 != debug) {
         if (PAT_API_OK != pat_res) {
 	  res = PAT_RECORD_ERROR;
-          printf("%d: PAT_counters failed with error %d within pat_mpi_monitor.\n", rank, pat_res);
+          printf("%d: PAT_counters failed with error %d within pat_mpi_record.\n", rank, pat_res);
         }
         else if (cat_ncntr[i] != ncntr_test) {
 	  res = PAT_RECORD_ERROR;
@@ -372,10 +380,11 @@ unsigned int pat_mpi_read_counter_values(const int nstep, const int sstep) {
         }
       }
     }
-    pat_res = PAT_region_end(PAT_REGION_MONITOR);
+    pat_res = PAT_region_end(region_id);
+    region_id++;
     if (PAT_API_OK != pat_res) {
       res = PAT_RECORD_ERROR;
-      printf("%d: PAT_region_end(PAT_REGION_MONITOR) failed with error %d.\n", rank, pat_res);
+      printf("%d: PAT_region_end(%d) failed with error %d.\n", rank, region_id, pat_res);
     }
     ///////////////////////////////////////////////////////////////////////////////////////////
 
