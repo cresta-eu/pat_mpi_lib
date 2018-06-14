@@ -56,6 +56,7 @@ script. For example, the following will record energy and power usage.
 ```bash
 module load perftools
 export PAT_RT_SUMMARY=1
+export PAT_RT_REGION_MAX=100000
 export MY_RT_CTRCAT=PAT_CTRS_PM
 export PAT_RT_PERFCTR=PM_POWER:NODE,PM_ENERGY:NODE
 ```
@@ -65,8 +66,7 @@ And this setup will return cache-related data.
 ```bash
 module load perftools
 export PAT_RT_SUMMARY=1
+export PAT_RT_REGION_MAX=100000
 export MY_RT_CTRCAT=PAT_CTRS_CPU
-export PAT_RT_PERFCTR=2
+export PAT_RT_PERFCTR=perf::PERF_COUNT_HW_CACHE_NODE,perf::PERF_COUNT_HW_CACHE_LL,perf::PERF_COUNT_HW_CACHE_L1D
 ```
-
-Hardware counter group 2 covers `L1D:REPLACEMENT`, `L2_RQSTS:ALL_DEMAND_DATA_RD`, `L2_RQSTS:DEMAND_DATA_RD_HIT`, `CPU_CLK_UNHALTED:THREAD_P`, `CPU_CLK_UNHALTED:REF_P`, `MEM_UOPS_RETIRED:ALL_LOADS`, `LLC_MISSES`, `LLC_REFERENCES`.
