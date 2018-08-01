@@ -16,7 +16,7 @@ This should result in a new file with the same name as your executable but
 with a `+pat` suffix.
 
 
-The following text describes the interface provided by the three functions
+The following text describes the interface provided by the four functions
 of the `pat_mpi_lib` library.
 
 ```bash
@@ -30,6 +30,11 @@ void pat_mpi_finalise(void)
 ```
 
 The finalise function calls `pat_mpi_record(nstep,1,1,0)` (described below). All counter files are closed, then rank 0 closes the output file.
+
+```c
+void pat_mpi_reset(const int initial_sync)
+```
+The reset function resets the counters to zero. If `initial_sync` is true `MPI_Barrier` is called before the reset.
 
 ```bash
 void pat_mpi_record(const int nstep, const int sstep, const int initial_sync, const int initial_rec)
@@ -70,3 +75,33 @@ export PAT_RT_REGION_MAX=100000
 export MY_RT_CTRCAT=PAT_CTRS_CPU
 export PAT_RT_PERFCTR=perf::PERF_COUNT_HW_CACHE_NODE,perf::PERF_COUNT_HW_CACHE_LL,perf::PERF_COUNT_HW_CACHE_L1D
 ```
+
+The Fortran-like code below shows how the `pat_mpi_lib` library routines could be integrated into an application code, within the main time step loop.
+
+```fortran
+...
+integer :: pat_res
+character(len=13) :: pat_out_fn = "app01pat.out"//CHAR(0)
+...
+call pat_mpi_initialise(pat_out_fn)
+
+do step=1,nsteps
+    call pat_mpi_reset(1)
+    call subroutine1()
+    pat_res = pat_mpi_record(step,1,1,0)
+    
+    call pat_mpi_reset(1)
+    call subroutine2()
+    pat_res = pat_mpi_record(step,2,1,0)
+    
+    call pat_mpi_reset(1)
+    call subroutine3()
+    pat_res = pat_mpi_record(step,3,1,0)
+end do
+
+call pat_mpi_finalise()
+...
+
+```
+
+The content of `app01pat.out` would then show how much the counter values changed as a consequence of calling subroutines 1 to 3.
