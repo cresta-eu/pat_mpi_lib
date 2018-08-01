@@ -20,15 +20,16 @@ program pat_testf
  
   integer :: ierr, i, res
   integer :: comm, rank
-  character (len=14) :: out_fn = "patc_test.out"//CHAR(0)
+  character (len=13) :: out_fn = "pat_test.out"//CHAR(0)
   
   call MPI_Init(ierr)
   
   call pat_mpi_initialise(out_fn)
 
   do i=1,10
-    res = pat_mpi_record(1,i,1,1)
+    call pat_mpi_reset(1)
     call sleep(1)
+    res = pat_mpi_record(1,i,1,1)
   end do
 
   call pat_mpi_finalise()

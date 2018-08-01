@@ -26,11 +26,12 @@ int main(int argc,char **argv){
   
   MPI_Init(NULL, NULL);
   
-  pat_mpi_initialise("./patc_test.out");
+  pat_mpi_initialise("./pat_test.out");
   
   for (i=1; i<10; i++) {
-    pat_mpi_record(i, 1, 1, 1);
+    pat_mpi_reset(1);
     sleep(500000);
+    pat_mpi_record(i, 1, 1, 0);
   }
   
   pat_mpi_finalise();

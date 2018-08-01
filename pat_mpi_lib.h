@@ -18,7 +18,8 @@
 #define PAT_MPI_LIB_H
 
 extern void pat_mpi_initialise(const char* out_fn);
-extern unsigned int pat_mpi_record(const int nstep, const int sstep, const int initial_sync, const int initial_rec);
+extern void pat_mpi_reset(const int initial_sync);
+extern int pat_mpi_record(const int nstep, const int sstep, const int initial_sync, const int initial_rec);
 extern void pat_mpi_finalise();
 
 #endif

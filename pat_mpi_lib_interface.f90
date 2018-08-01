@@ -25,6 +25,13 @@ module pat_mpi_lib
   end interface
 
   interface
+   subroutine pat_mpi_reset(initial_sync) bind(c,name='pat_mpi_reset')
+    use, intrinsic :: iso_c_binding
+    integer(c_int),value :: initial_sync
+   end subroutine pat_mpi_reset
+  end interface
+
+  interface
    integer(c_int) function pat_mpi_record(nstep,sstep,initial_sync,initial_rec) bind(c,name='pat_mpi_record')
     use, intrinsic :: iso_c_binding
     integer(c_int),value :: nstep
