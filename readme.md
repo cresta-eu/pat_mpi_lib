@@ -6,7 +6,7 @@ This repository holds source code for the `pat_mpi_lib` library. There are
 also two small test harnesses that demonstrate how to call the library
 functions from Fortran and C codes.
 
-The makefile is intended for use on the ARCHER Cray XC30 MPP Supercomputer:
+The makefile is intended for use on the [ARCHER2 HPE Cray EX Supercomputer](www.archer2.ac.uk):
 the makefile script references the `PE_ENV` environment variable.
 
 Before compiling please load the perftools module (`module load perftools`),

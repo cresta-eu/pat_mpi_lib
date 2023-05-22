@@ -1,5 +1,5 @@
 /* 
-  Copyright (c) 2017 The University of Edinburgh.
+  Copyright (c) 2023 The University of Edinburgh.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ int main(int argc,char **argv){
   
   for (i=1; i<10; i++) {
     pat_mpi_reset(1);
-    sleep(500000);
+    sleep(5);
     pat_mpi_record(i, 1, 1, 0);
   }
   

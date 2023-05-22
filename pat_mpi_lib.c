@@ -1,5 +1,5 @@
 /* 
-  Copyright (c) 2017 The University of Edinburgh.
+  Copyright (c) 2023 The University of Edinburgh.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@
 #include "pat_mpi_lib.h"
 
 
-static char ver[]="5.0.0";
+static char ver[]="6.0.0";
 
 #define PAT_MPI_LIB_UNINITIALISED 1001
 #define MAX_NAME_LEN 128
@@ -110,9 +110,9 @@ int get_cat_val(char* str) {
     // HWPCs on attached GPUs
     cat = PAT_CTRS_ACCEL;
   }
-  else if (0 == strcmp("PAT_CTRS_NB", str)) {
-    // AMD NorthBridge on nodes
-    cat = PAT_CTRS_NB;
+  else if (0 == strcmp("PAT_CTRS_ACCMG", str)) {
+    // HWPCs on attached GPUs
+    cat = PAT_CTRS_ACCEL;
   }
   else if (0 == strcmp("PAT_CTRS_RAPL", str)) {
     // Running Avr Power Level on package
@@ -131,7 +131,7 @@ int get_cat_val(char* str) {
     // next counter category
     cat = PAT_CTRS_UNCORE+1;
   }
-  
+
   return cat;
 }
 
