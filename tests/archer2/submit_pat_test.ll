@@ -10,10 +10,6 @@
 #SBATCH --qos=standard
 
 
-module -q load perftools-base
-module -q load perftools
-
-
 export OMP_NUM_THREADS=1
 
 export PAT_RT_SUMMARY=1

@@ -7,10 +7,18 @@ functions from Fortran and C codes.
 The makefile is intended for use on the [ARCHER2 HPE Cray EX Supercomputer](www.archer2.ac.uk): the makefile script references the `PE_ENV`
 environment variable.
 
-Before compiling please load the perftools module (`module load perftools-base perftools`), and then compile by running `make`. Once you have
-compiled and linked your application code with `libpatmpi`, you must then run `pat_build -w <executable>`. This should result in a new file with
-the same name as your executable but with a `+pat` suffix.
+Before compiling please prepare your environment like so.
 
+```bash
+module load perftools-base
+module load perftools
+
+# Set path to location off /work to ensure accessibility from compute nodes. 
+export PAT_LD_OBJECT_TMPDIR=${PWD}
+```
+
+Next, compile by running `make`. Once you have compiled and linked your application code with `libpatmpi`, you must then run `pat_build -w <executable>`.
+This should result in a new file with the same name as your executable but with a `+pat` suffix.
 
 The following text describes the interface provided by the four functions of the `pat_mpi_lib` library.
 
